@@ -84,8 +84,6 @@
                         (page-css "http://wiki.call-cc.org/chicken.css"))
            (awful-settings handler)))))
 
-    (define captchas (and use-captcha? (create-captchas num-captchas)))
-
     (define figlet-installed?
       (handle-exceptions exn
         #f
@@ -96,6 +94,7 @@
              "doesn't seem to be installed. Disabling captchas.")
       (set! use-captcha? #f))
 
+    (define captchas (and use-captcha? (create-captchas num-captchas)))
 
     ;; The database needs to be initialised once
     (unless (file-exists? db-file)
