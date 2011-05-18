@@ -149,14 +149,14 @@
                     (tabularize
                      (append
                       `(( "Your nick: " ,(text-input 'nick))
-                        ( "The title of your paste:" ,(text-input 'title) ))
+                        ( "The title of your paste:" ,(text-input 'title) )
+                        ( ,(++ "Your paste " (<i> "(mandatory)" " :"))
+                          ,(<textarea> id: "paste" name: "paste"  cols: 60 rows: 24)))
                       (if use-captcha?
                           `(( "Type the text below:" ,(text-input 'captcha-user-answer))
                             ("" ,(<pre> id: "captcha" (captcha-figlet captcha))))
                           '())
-                      `(( ,(++ "Your paste " (<i> "(mandatory)" " :"))
-                          ,(<textarea> id: "paste" name: "paste"  cols: 60 rows: 24))
-                        ("" ,(if vandusen-host
+                      `(("" ,(if vandusen-host
                                  (<input> name: "notify-irc"
                                           type: "checkbox"
                                           checked: "checked"
