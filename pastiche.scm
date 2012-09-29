@@ -76,17 +76,21 @@
 			(browsing-steps 15)
                         (awful-settings (lambda (_) (_))))
 
-  (parameterize ((app-root-path base-path))
+  (parameterize ((app-root-path base-path)
+                 (generate-sxml? #t)
+                 (enable-sxml #t))
 
 		(add-request-handler-hook!
 		 'awful-paste
 		 (lambda (path handler)
 		   (when (string-prefix? base-path path)
 			 (switch-to-sql-de-lite-database)
-			 (parameterize ((app-root-path base-path)
+			 (parameterize ((enable-sxml #t)
+                                        (generate-sxml? #t)
+                                        (app-root-path base-path)
 					(db-credentials db-file)
 					(page-css "http://wiki.call-cc.org/chicken.css"))
-				       (awful-settings handler)))))
+                           (awful-settings handler)))))
 
     (define figlet-installed?
       (handle-exceptions exn
@@ -139,13 +143,13 @@
 
     (define (navigation-links)
       (<div> id: "menu"
-	     (<ul>
-	      (apply ++ (map (lambda (m)
-			       (<li> (link (make-pathname base-path (car m))
-					   (cdr m))))
-			     '(("" . "New Paste")
-			       ("browse" . "Browse pastes")
-			       ("about" . "What is this?")))))))
+	     (apply <ul>
+                    (map (lambda (m)
+                           (<li> (link (make-pathname base-path (car m))
+                                       (cdr m))))
+                         '(("" . "New Paste")
+                           ("browse" . "Browse pastes")
+                           ("about" . "What is this?"))))))
     
     (define (recent-pastes n)
       (<div> class: "paste-list"
@@ -159,27 +163,28 @@
         (<div> class: "paste-form"
                (<h2> "Enter a new " (if annotate-id " annotation:" " paste:"))
                (form
-                (++ (if use-captcha?
-                        (hidden-input 'captcha-hash captcha-hash)
-                        "")
-                    (tabularize
-                     (append
-                      `(( "Your nick: " ,(text-input 'nick))
-                        ( "The title of your paste:" ,(text-input 'title) )
-			( ,(++ "Your paste " (<i> "(mandatory)" " :"))
-                          ,(<textarea> id: "paste" name: "paste"  cols: 60 rows: 24)))
-			(if use-captcha?
-                          `(( "Type in the text below:" ,(text-input 'captcha-user-answer))
-                            ("" ,(<pre> id: "captcha" (captcha-figlet captcha))))
-                          '())
-                        `(("" ,(if vandusen-host
-                                 (<input> name: "notify-irc"
-                                          type: "checkbox"
-                                          checked: "checked"
-                                          "Please notify the #chicken channel on freenode.")
-                                 ""))
-                        ,(list (if annotate-id (hidden-input 'id annotate-id) "")
-                               (submit-input value: "Submit paste!"))))))
+                (list
+                 (if use-captcha?
+                     (hidden-input 'captcha-hash captcha-hash)
+                     "")
+                 (tabularize
+                  (append
+                   `(( "Your nick: " ,(text-input 'nick))
+                     ( "The title of your paste:" ,(text-input 'title) )
+                     ( ,(list "Your paste " (<i> "(mandatory)" " :"))
+                       ,(<textarea> id: "paste" name: "paste"  cols: 60 rows: 24)))
+                   (if use-captcha?
+                       `(( "Type in the text below:" ,(text-input 'captcha-user-answer))
+                         ("" ,(<pre> id: "captcha" (captcha-figlet captcha))))
+                       '())
+                   `(("" ,(if vandusen-host
+                              (<input> name: "notify-irc"
+                                       type: "checkbox"
+                                       checked: "checked"
+                                       "Please notify the #chicken channel on freenode.")
+                              ""))
+                     ,(list (if annotate-id (hidden-input 'id annotate-id) "")
+                            (submit-input value: "Submit paste!"))))))
                 action: (make-pathname base-path "paste")
                 method: "post"))))
 
@@ -200,11 +205,11 @@
              values: (list id author title time paste))))
 
     (define (bail-out . reasons)
-      (++ (<h1> "Ooops, something went wrong") (<br>)
-          (<div> id: "failure-reason" (fold (lambda (i r)
-                                              (++ r (sprintf "~a" i)))
-                                            "" reasons))
-          "I am sorry for this, you better go back."))
+      (list (<h1> "Ooops, something went wrong") (<br>)
+            (<div> id: "failure-reason" (fold (lambda (i r)
+                                                (string-append r (sprintf "~a" i)))
+                                              "" reasons))
+            "I am sorry for this, you better go back."))
 
     (define (prettify-time t)
       (let* ((delta (- (current-seconds) t))
@@ -222,45 +227,46 @@
 	      (else (sprintf "on ~a" (seconds->string t))))))
 
     (define (print-snippet s #!key annotation? (count 0))
-      (++ (<div> class: "paste-header"
-                 (<h3> (<a> name: (sprintf "a~A" count) (third s)))
-                 (if annotation? " added " " pasted ") " by " (second s) " "
-                 (prettify-time (fourth s)))
-          (<div> class: "paste"
-                 (<pre> (<tt> class: "highlight scheme-language" (html-colorize 'scheme (fifth s)))))
-          (<div> class: "paste-footer"
-                 " [ "
-                 (link (make-pathname base-path
-                                      (string-append "paste?id=" (first s) "#a" (->string count)))
-                       "permalink")
-                 " | "
-                 (link (make-pathname base-path
-                                      (string-append "raw?id=" (first s) "&annotation=" (->string count)))
-                       "raw")
-                 " ] ")))
+      (list
+       (<div> class: "paste-header"
+              (<h3> (<a> name: (sprintf "a~A" count) (third s)))
+              (if annotation? " added " " pasted ") " by " (second s) " "
+              (prettify-time (fourth s)))
+       (<div> class: "paste"
+              (<pre> (<tt> class: "highlight scheme-language" (html-colorize 'scheme (fifth s)))))
+       (<div> class: "paste-footer"
+              " [ "
+              (link (make-pathname base-path
+                                   (string-append "paste?id=" (first s) "#a" (->string count)))
+                    "permalink")
+              " | "
+              (link (make-pathname base-path
+                                   (string-append "raw?id=" (first s) "&annotation=" (->string count)))
+                    "raw")
+              " ] ")))
 
     (define (format-all-snippets snippets)
       (fold (let ((c (length snippets)))
               (lambda (p s)
                 (set! c (sub1 c))
-                (++ (print-snippet p annotation?: (= c (- (length snippets) 1)) count: c) s)))
-            ""
+                (list (print-snippet p annotation?: (= c (- (length snippets) 1)) count: c) s)))
+            '()
             snippets))
 
     (define-page "/" ;; the main page, prefixed by base-path
       (lambda ()
-        (++ 
+        (list
 	 (<div> id: "content" (<h1> id: "heading" align: "center"
 				    "Welcome to the chicken scheme pasting service")
-		(++ (or (and-let* ((id ($ 'id))
-				   (annotate ($ 'annotate)))
-				  (cond ((fetch-paste id)
-					 => (lambda (p)
-					      (++ (format-all-snippets p)
-						  (<h2> "Your annotation:")
-						  (paste-form annotate-id: id))))
-					(else (bail-out "Found no paste to annotate with this id."))))
-			(paste-form))))
+		(or (and-let* ((id ($ 'id))
+                               (annotate ($ 'annotate)))
+                      (cond ((fetch-paste id)
+                             => (lambda (p)
+                                  (list (format-all-snippets p)
+                                        (<h2> "Your annotation:")
+                                        (paste-form annotate-id: id))))
+                            (else (bail-out "Found no paste to annotate with this id."))))
+                    (paste-form)))
 	 (navigation-links)))
       title: "Pastiche: the Chicken Scheme pasting service")
 
@@ -271,19 +277,19 @@
                                  (paste (nonempty as-string))
                                  (id    (nonempty as-string)))
           (html-page
-           (++
+           (list
             (<div> id: "content"
                    (cond
                     ((and id (not paste))
                      (cond ((fetch-paste id)
                             => (lambda (p)
                                  (set! paste-title (third (last p)))
-                                 (++
+                                 (list
                                   (format-all-snippets p)
                                   (<div> id: "paste-footer"
                                          (<h2> align: "center"
-                                               (link (++ base-path "?id=" id
-                                                         ";annotate=t") "Annotate this paste!"))))))
+                                               (link (string-append base-path "?id=" id
+                                                                    ";annotate=t") "Annotate this paste!"))))))
                            (else (bail-out "Could not find a paste with this id: " id))))
                     (paste
                      (if (and use-captcha?
@@ -292,11 +298,11 @@
                                                       (captcha (alist-ref hash captchas equal?)))
                                              (captcha-string captcha)))))
                          (bail-out "Wrong captcha answer.")
-                         (let* ((nick (or (and nick (htmlize nick)) "anonymous"))
-                                (title (or (and title (htmlize title)) "no title"))
+                         (let* ((nick (or nick "anonymous"))
+                                (title (or title "no title"))
                                 (time (current-seconds))
                                 (hashsum (string->sha1sum
-                                          (++ nick title (->string time) paste)))
+                                          (string-append nick title (->string time) paste)))
                                 (url '())
                                 (snippet (map
                                           (lambda (i)
@@ -312,14 +318,15 @@
                                                     (update-paste id snippet)
                                                     (set! url (make-pathname
                                                                base-path
-                                                               (++ "paste?id=" id "#a" (->string count)))))))
+                                                               (conc "paste?id=" id "#a" count))))))
                                             (else (insert-paste hashsum snippet)
-                                                  (set! url (make-pathname base-path (++ "paste?id=" hashsum)))))
+                                                  (set! url (make-pathname base-path (string-append "paste?id=" hashsum)))))
                                       (set! paste-title title)
                                       (when ($ 'notify-irc) (notify nick title url))
-                                      (++  (<h2> align: "center" "Thanks for your paste!")
-                                           (<p> "Hi " nick ", thanks for pasting: " (<em> title) (<br>))
-                                           (<p> align: "center") "Your paste can be reached with this url: " (link url url)))))))
+                                      (list  (<h2> align: "center" "Thanks for your paste!")
+                                             (<p> "Hi " nick ", thanks for pasting: " (<em> title) (<br>))
+                                             (<p> align: "center")
+                                             "Your paste can be reached with this url: " (link url url)))))))
                     (else (bail-out "I am not storing empty pastes."))))
             (navigation-links))
            css: (page-css)
@@ -369,40 +376,42 @@
 		(newer-to (max (- to browsing-steps) browsing-steps))
 		(history-path (make-pathname base-path "browse")))
 	   (html-page
-	    (++ (<div> id: "content"
-		       (<h2> align: "center" "Browsing pastes")
-		       (<div> id: "browse-navigation"
-			      align: "center"
-			      (if (>= newer-from 0) (link  (sprintf "~a?from=~a;to=~a" history-path newer-from newer-to)
-							   "< newer")
-				  "< newer")
-			      " ... "
-			      (if (and (not (= to nposts)) (<= older-to nposts))
-				  (link (sprintf "~a?from=~a;to=~a" history-path older-from older-to)
-					"older >")
-				  "older >"))
-		       (make-post-table to from))
-		(navigation-links)))))))
+	    (list
+             (<div> id: "content"
+                    (<h2> align: "center" "Browsing pastes")
+                    (<div> id: "browse-navigation"
+                           align: "center"
+                           (if (>= newer-from 0) (link  (sprintf "~a?from=~a;to=~a" history-path newer-from newer-to)
+                                                        "< newer")
+                               "< newer")
+                           " ... "
+                           (if (and (not (= to nposts)) (<= older-to nposts))
+                               (link (sprintf "~a?from=~a;to=~a" history-path older-from older-to)
+                                     "older >")
+                               "older >"))
+                    (make-post-table to from))
+             (navigation-links)))))))
 
     (define-page "about"
       (lambda ()
-        (++ (<div> id: "content"
-                   (<h2> "You have reached the CHICKEN scheme pasting service")
-                   (<p> (htmlize "These pages are maintained by the CHICKEN scheme
+        (list
+         (<div> id: "content"
+                (<h2> "You have reached the CHICKEN scheme pasting service")
+                (<p> "These pages are maintained by the CHICKEN scheme
                       project team. Anyone that enters a correct CAPTCHA response is allowed
                       to post anything he likes. If you find objectionable content, feel
-                      free to drop a mail at chicken-janitors <at> nongnu dot org"))
-                   (<p> "The source code for these pages is
+                      free to drop a mail at chicken-janitors <at> nongnu dot org")
+                (<p> "The source code for these pages is
                           distributed under a BSD license at C-Keen's "
-                        (link "https://github.com/ckeen/pastiche" "github repo"))
-                   (<p> "Our thanks go to chandler for the famous "
-                        (link "http://paste.lisp.org" "lisppaste") " "
-                        (link "http://www.cliki.net/lisppaste" "(cliki page)")
-                        " bot and the same disclaimer applies:")
-                   (<p> "Lisppaste pastes can be made by anyone at
+                     (link "https://github.com/ckeen/pastiche" "github repo"))
+                (<p> "Our thanks go to chandler for the famous "
+                     (link "http://paste.lisp.org" "lisppaste") " "
+                     (link "http://www.cliki.net/lisppaste" "(cliki page)")
+                     " bot and the same disclaimer applies:")
+                (<p> "Lisppaste pastes can be made by anyone at
                           any time. Imagine a fearsomely comprehensive disclaimer of
                           liability. Now fear, comprehensively."))
-            (navigation-links)))
+         (navigation-links)))
       title: "About Pastiche"))))
 
 
