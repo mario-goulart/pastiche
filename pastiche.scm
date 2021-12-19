@@ -130,7 +130,6 @@
 ;;;
 
 (define-record captcha string figlet)
-(define captchas #f)
 
 (define (tool-exists? tool)
   (let ((paths (string-split (get-environment-variable "PATH")
@@ -190,6 +189,96 @@
       (close-input-port in)
       r)))
 
+(define (render-captcha captchas base-path audible-captcha?)
+  (let* ((hash/captcha (get-captcha captchas))
+         (captcha-hash (car hash/captcha))
+         (captcha (cdr hash/captcha)))
+    `(
+      ;; This is a bit ugly, as we are putting a hidden input
+      ;; field as a table line...
+      ("" ,(hidden-input 'captcha-hash captcha-hash))
+      ("Type in the text below:" ,(text-input 'captcha-user-answer))
+      ("" (pre (@ (id "captcha"))
+               ,(captcha-figlet captcha)))
+      ,(if audible-captcha?
+           `("Visually impaired? Let me spell it for you (wav file)"
+             (audio (@ (src ,(make-pathname base-path
+                                            (sprintf "captcha?hash=~a.wav"
+                                                     captcha-hash)))
+                       (preload  "metadata")
+                       (controls "controls")))
+             (a (@ (href ,(make-pathname base-path
+                                         (sprintf "captcha?hash=~a.wav"
+                                                  captcha-hash))))
+                "download WAV"))
+           '()))))
+
+(define (consume-captcha captchas num-captchas)
+  (if (= 1 (length captchas))
+      (create-captchas num-captchas)
+      (alist-delete ($ 'captcha-hash) captchas)))
+
+(define (valid-captcha? captchas)
+  (equal? ($ 'captcha-user-answer)
+          (and-let* ((hash ($ 'captcha-hash))
+                     (captcha-str (alist-ref hash captchas equal?)))
+            (captcha-string captcha-str))))
+
+(define (define-captcha-page captchas espeak-binary audible-captcha? bail-out)
+  (define-page "captcha"
+    (lambda ()
+      (if audible-captcha?
+          (with-request-variables
+              ((hash as-string))
+            (let*
+                ((splitted (string-split hash "."))
+                 (hash (car splitted))
+                 (extension (or (null? (cdr splitted)) (cadr splitted))))
+              (cond ((and
+                      (equal? extension "wav")
+                      (alist-ref (car (string-split hash ".")) captchas equal?)) =>
+                      (lambda (c)
+                        (awful-response-headers '((content-type "audio/wav")))
+                        `(literal
+                          ,(string-as-wav espeak-binary
+                                          (captcha-string c)
+                                          (preferred-languages
+                                           (header-contents
+                                            'accept-language
+                                            (request-headers (current-request))))))))
+                    (else (bail-out "Wrong captcha hash, please reload the page and try again")))))
+          (bail-out "Audio captchas have been disabled in the configuration.")))
+    no-template: #t))
+
+
+(define (make-default-captcha base-path audible-captcha? num-captchas espeak-binary espeak-data-dir bail-out)
+  (let ((use-captcha? #t)
+        (captchas '()))
+    (when (and use-captcha? (not (tool-exists? "figlet")))
+      (print "WARNING: `use-captcha?' indicates that captchas are enabled but figlet "
+             "doesn't seem to be installed. Disabling captchas.")
+      (set! use-captcha? #f)
+      (set! audible-captcha? #f))
+
+    (when (and audible-captcha? (not (tool-exists? "espeak")))
+      (print "WARNING: `audible-captcha?' indicates that audible captchas are enabled "
+             "but espeak doesn't seem to be installed. Disabling audible captchas.")
+      (set! audible-captcha? #f))
+
+    (when audible-captcha?
+      (set! espeak-available-languages
+            (find-espeak-languages espeak-binary espeak-data-dir)))
+    (set! captchas (and use-captcha? (create-captchas num-captchas)))
+
+    (lambda (message)
+      (case message
+        ((render) (render-captcha captchas base-path audible-captcha?))
+        ((valid?) (valid-captcha? captchas))
+        ((consume!) (set! captchas (consume-captcha captchas num-captchas)))
+        ((define-pages)
+         (define-captcha-page captchas espeak-binary audible-captcha? bail-out))
+        (else (error 'captcha-api "Invalid message" message))))))
+
 ;;;
 ;;; Pastiche
 ;;;
@@ -198,6 +287,7 @@
                         (vandusen-host "localhost")
                         (base-url "http://paste.call-cc.org")
                         (use-captcha? #t)
+                        (captcha-api #f)
                         (audible-captcha? use-captcha?)
                         (espeak-binary "espeak")
                         (espeak-data-dir #f)
@@ -206,11 +296,6 @@
                         (browsing-steps 15)
                         force-vandusen-notification?
                         (awful-settings (lambda (_) (_))))
-
-  (define (delete-and-refill-captchas clist captcha)
-    (if (= 1 (length clist))
-        (create-captchas num-captchas)
-        (alist-delete captcha clist)))
 
   (define base-path-pattern
     (irregex (string-append (string-chomp base-path "/") "(/.*)*")))
@@ -226,28 +311,30 @@
                                    (page-css "//wiki.call-cc.org/chicken.css"))
                       (awful-settings handler)))
 
-    (when (and use-captcha? (not (tool-exists? "figlet")))
-      (print "WARNING: `use-captcha?' indicates that captchas are enabled but figlet "
-             "doesn't seem to be installed. Disabling captchas.")
-      (set! use-captcha? #f)
-      (set! audible-captcha? #f))
+    (define (bail-out . reasons)
+      `((h1 "Ooops, something went wrong")
+        (br)
+        (div (@ (id "failure-reason"))
+             ,(fold (lambda (i r)
+                      (sprintf "~a~a" r i))
+                    "" reasons))
+        "I am sorry for this, you better go back."))
 
-    (when (and audible-captcha? (not (tool-exists? "espeak")))
-      (print "WARNING: `audible-captcha?' indicates that audible captchas are enabled "
-             "but espeak doesn't seem to be installed. Disabling audible captchas.")
-      (set! audible-captcha? #f))
-
-    (when audible-captcha?
-      (set! espeak-available-languages
-            (find-espeak-languages espeak-binary espeak-data-dir)))
+    (define captcha
+      (or captcha-api
+          (and use-captcha?
+               (make-default-captcha base-path
+                                     audible-captcha?
+                                     num-captchas
+                                     espeak-binary
+                                     espeak-data-dir
+                                     bail-out))))
 
     (when (and force-vandusen-notification?
                (or (not vandusen-host)
                    (not vandusen-port)))
       (error 'pastiche
              "`force-vandusen-notification?' requires both `vandusen-host' and `vandusen-port' to be set."))
-
-    (set! captchas (and use-captcha? (create-captchas num-captchas)))
 
     (define bad-words-irx
       (and bad-words-path
@@ -340,55 +427,35 @@
             ,(make-post-table n)))
 
     (define (paste-form #!key annotate-id)
-      (let* ((hash/captcha (and use-captcha? (get-captcha captchas)))
-             (captcha-hash (and use-captcha? (car hash/captcha)))
-             (captcha (and use-captcha? (cdr hash/captcha))))
-        `(div (@ (class "paste-form"))
-              (h2 "Enter a new " ,(if annotate-id " annotation:" " paste:"))
-              (form (@ (method "post")
-                       (action ,(make-pathname base-path "paste")))
-                    ,(if use-captcha?
-                         (hidden-input 'captcha-hash captcha-hash)
+      `(div (@ (class "paste-form"))
+            (h2 "Enter a new " ,(if annotate-id " annotation:" " paste:"))
+            (form (@ (method "post")
+                     (action ,(make-pathname base-path "paste")))
+                  ,(tabularize
+                    (append
+                     `(("Your nick: " ,(text-input 'nick))
+                       ("The title of your paste:" ,(text-input 'title) )
+                       (("Your paste " (i "(mandatory)" " :"))
+                        (textarea (@ (id "paste")
+                                     (name "paste")
+                                     (cols 60)
+                                     (rows 24)))))
+                     (if captcha
+                         (captcha 'render)
                          '())
-                    ,(tabularize
-                      (append
-                       `(("Your nick: " ,(text-input 'nick))
-                         ("The title of your paste:" ,(text-input 'title) )
-                         (("Your paste " (i "(mandatory)" " :"))
-                          (textarea (@ (id "paste")
-                                       (name "paste")
-                                       (cols 60)
-                                       (rows 24)))))
-                       (if use-captcha?
-                           `(("Type in the text below:" ,(text-input 'captcha-user-answer))
-                             ("" (pre (@ (id "captcha"))
-                                      ,(captcha-figlet captcha)))
-                             ,(if audible-captcha?
-                                  `("Visually impaired? Let me spell it for you (wav file)"
-                                    (audio (@ (src ,(make-pathname base-path
-                                                                   (sprintf "captcha?hash=~a.wav"
-                                                                            captcha-hash)))
-                                              (preload  "metadata")
-                                              (controls "controls")))
-                                    (a (@ (href ,(make-pathname base-path
-                                                                (sprintf "captcha?hash=~a.wav"
-                                                                         captcha-hash))))
-                                       "download WAV"))
-                                  '()))
-                           '())
-                       `(("" ,(if force-vandusen-notification?
-                                  (hidden-input 'notify-irc "yes")
-                                  (if vandusen-host
-                                      `(input (@ (name "notify-irc")
-                                                 (type "checkbox")
-                                                 (checked "checked"))
-                                              "Please notify the #chicken channel on freenode.")
-                                      '())))
-                         (,(if annotate-id
-                               (hidden-input 'id annotate-id)
-                               '())
-                          ((input (@ (type "submit")
-                                     (value "Submit paste!"))))))))))))
+                     `(("" ,(if force-vandusen-notification?
+                                (hidden-input 'notify-irc "yes")
+                                (if vandusen-host
+                                    `(input (@ (name "notify-irc")
+                                               (type "checkbox")
+                                               (checked "checked"))
+                                            "Please notify the #chicken channel on freenode.")
+                                    '())))
+                       (,(if annotate-id
+                             (hidden-input 'id annotate-id)
+                             '())
+                        ((input (@ (type "submit")
+                                   (value "Submit paste!")))))))))))
 
     (define (fetch-paste id)
       (and id
@@ -408,15 +475,6 @@
              values: (list id author title time paste))
         ($db "insert into searchable (hash, author, title, time, paste) values (?,?,?,?,?)"
              values: (list id author title time paste))))
-
-    (define (bail-out . reasons)
-      `((h1 "Ooops, something went wrong")
-        (br)
-        (div (@ (id "failure-reason"))
-             ,(fold (lambda (i r)
-                      (sprintf "~a~a" r i))
-                    "" reasons))
-        "I am sorry for this, you better go back."))
 
     (define (prettify-time t)
       (let* ((delta (- (current-seconds) t))
@@ -500,11 +558,7 @@
 	      (div (@ (id "content"))
                    ,(if (eqv? method 'POST)
                         (if paste
-                            (if (and use-captcha?
-                                     (not (equal? ($ 'captcha-user-answer)
-                                                  (and-let* ((hash ($ 'captcha-hash))
-                                                             (captcha (alist-ref hash captchas equal?)))
-                                                    (captcha-string captcha)))))
+                            (if (and captcha (not (captcha 'valid?)))
                                 (bail-out "Wrong captcha answer.")
                                 (let* ((nick (or nick "anonymous"))
                                        (title (or title "no title"))
@@ -540,9 +594,8 @@
                                                                           (string-append "paste?id=" hashsum)))))
                                          (set! paste-title title)
                                          (when ($ 'notify-irc) (notify nick title url))
-                                         (when use-captcha?
-                                           (set! captchas
-                                                 (delete-and-refill-captchas captchas ($ 'captcha-hash))))
+                                         (when captcha
+                                           (captcha 'consume!))
                                          `((h2 (@ (align "center")) "Thanks for your paste!")
                                            (p "Hi " ,nick ", thanks for pasting: " (em ,title) (br))
                                            (p (@ (align "center"))
@@ -674,30 +727,9 @@
                   liability. Now fear, comprehensively."))))
       title: "About Pastiche")
 
-    (define-page "captcha"
-      (lambda ()
-        (if audible-captcha?
-            (with-request-variables
-             ((hash as-string))
-             (let*
-                 ((splitted (string-split hash "."))
-                  (hash (car splitted))
-                  (extension (or (null? (cdr splitted)) (cadr splitted))))
-               (cond ((and
-                       (equal? extension "wav")
-                       (alist-ref (car (string-split hash ".")) captchas equal?)) =>
-                       (lambda (c)
-                         (awful-response-headers '((content-type "audio/wav")))
-                         `(literal
-                           ,(string-as-wav espeak-binary
-                                           (captcha-string c)
-                                           (preferred-languages
-                                            (header-contents
-                                             'accept-language
-                                             (request-headers (current-request))))))))
-                     (else (bail-out "Wrong captcha hash, please reload the page and try again")))))
-            (bail-out "Audio captchas have been disabled in the configuration.")))
-      no-template: #t)
+    (when captcha
+      (captcha 'define-pages))
+
     ) ;; end define-app
 
   ) ;; end pastiche
