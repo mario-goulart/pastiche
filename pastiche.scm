@@ -81,14 +81,20 @@
     (cond ((or (and data-dir (directory-exists? data-dir))
                (and derived-data-dir (directory-exists? derived-data-dir))) =>
            (lambda (dir)
-             (find-files (make-pathname dir "voices") action: (lambda (f s) (cons (pathname-strip-directory f) s)) test: file-exists?)))
+             (find-files (make-pathname dir "voices")
+                         action: (lambda (f s) (cons (pathname-strip-directory f) s))
+                         test: file-exists?)))
           (derived-data-dir ;; executable has been found, but directory does not exist
            '("en"))
           (else
            (error "audible captchas have been configured but the call to espeak did not work.")))))
 
 (define (select-preferred-language available preferences)
-  (or (find (cut member <> available) (map (lambda (p) (symbol->string (car p))) preferences)) "en"))
+  (or (find (cut member <> available)
+            (map (lambda (p)
+                   (symbol->string (car p)))
+                 preferences))
+      "en"))
 
 (define espeak-available-languages '())
 
@@ -173,8 +179,11 @@
   (list-ref captchas (pseudo-random-integer (length captchas))))
 
 (define (string-as-wav espeak-binary s preferred-languages)
-  (let-values (((in out pid) (process espeak-binary `("-s 10" "--stdout" "-v"
-                                                 ,(select-preferred-language espeak-available-languages preferred-languages)))))
+  (let-values (((in out pid)
+                (process espeak-binary
+                         `("-s 10" "--stdout" "-v"
+                           ,(select-preferred-language espeak-available-languages
+                                                       preferred-languages)))))
     (fprintf out "~s" (list->string (intersperse (string->list s) #\space)))
     (close-output-port out)
     (let ((r (read-string #f in)))
@@ -224,12 +233,13 @@
       (set! audible-captcha? #f))
 
     (when (and audible-captcha? (not (tool-exists? "espeak")))
-      (print "WARNING: `audible-captcha?' indicates that audible captchas are enabled but espeak "
-             "doesn't seem to be installed. Disabling audible captchas.")
+      (print "WARNING: `audible-captcha?' indicates that audible captchas are enabled "
+             "but espeak doesn't seem to be installed. Disabling audible captchas.")
       (set! audible-captcha? #f))
 
     (when audible-captcha?
-      (set! espeak-available-languages (find-espeak-languages espeak-binary espeak-data-dir)))
+      (set! espeak-available-languages
+            (find-espeak-languages espeak-binary espeak-data-dir)))
 
     (when (and force-vandusen-notification?
                (or (not vandusen-host)
@@ -266,17 +276,22 @@
               (cleaned-title (with-input-from-string title html-strip)))
             (ignore-errors
              (let ((stuff (sprintf "~s pasted ~s ~a"
-                                   cleaned-nick cleaned-title (if (string-null? url) "" (make-pathname base-url url)))))
+                                   cleaned-nick
+                                   cleaned-title
+                                   (if (string-null? url)
+                                       ""
+                                       (make-pathname base-url url)))))
                (send-to-irc stuff))))))
 
-
     (define (matching-pastes query)
-      ($db "select * from searchable where searchable match ? order by time desc" values: (list query)))
+      ($db "select * from searchable where searchable match ? order by time desc"
+           values: (list query)))
 
     (define (make-search-result-table results)
       (define (format-row r)
         (list (second r)                   ; Nickname
-              `(a (@ (href ,(make-pathname base-path (string-append "/paste?id=" (first r))))
+              `(a (@ (href ,(make-pathname base-path
+                                           (string-append "/paste?id=" (first r))))
                      (id "paste-url"))
                   ,(third r))              ; title
               (prettify-time (fourth r)))) ; date
@@ -290,13 +305,15 @@
 
 ; old "select * from pastes order by time desc limit ?,?"
     (define (fetch-last-pastes count #!key (offset 0))
-      (let ((r ($db "select hash, author, title, min(time), paste from pastes group by hash order by time desc limit ?,?" values: (list offset count))))
+      (let ((r ($db "select hash, author, title, min(time), paste from pastes group by hash order by time desc limit ?,?"
+                    values: (list offset count))))
         r))
 
     (define (make-post-table n #!key (offset 0))
       (define (format-row r)
         (list (second r)                   ; Nickname
-              `(a (@ (href ,(make-pathname base-path (string-append "/paste?id=" (first r))))
+              `(a (@ (href ,(make-pathname base-path
+                                           (string-append "/paste?id=" (first r))))
                      (id "paste-url"))
                   ,(third r))              ; title
               (prettify-time (fourth r)))) ; date
@@ -349,11 +366,13 @@
                              ,(if audible-captcha?
                                   `("Visually impaired? Let me spell it for you (wav file)"
                                     (audio (@ (src ,(make-pathname base-path
-                                                                   (sprintf "captcha?hash=~a.wav" captcha-hash)))
+                                                                   (sprintf "captcha?hash=~a.wav"
+                                                                            captcha-hash)))
                                               (preload  "metadata")
                                               (controls "controls")))
                                     (a (@ (href ,(make-pathname base-path
-                                                                (sprintf "captcha?hash=~a.wav" captcha-hash))))
+                                                                (sprintf "captcha?hash=~a.wav"
+                                                                         captcha-hash))))
                                        "download WAV"))
                                   '()))
                            '())
@@ -373,7 +392,8 @@
 
     (define (fetch-paste id)
       (and id
-           (let ((r ($db "select * from pastes where hash=? order by time desc" values: (list id))))
+           (let ((r ($db "select * from pastes where hash=? order by time desc"
+                         values: (list id))))
              (and (not (null? r)) r))))
 
     (define (update-paste id snippet)
@@ -421,17 +441,22 @@
                  ,(prettify-time (fourth s)))
              (div (@ (class "paste"))
                   (pre (tt (@ (class "highlight scheme-language"))
-                           (literal ,(if (< (string-length (fifth s)) 5000) ;; only colorize if the paste isn't too long
+                            ;; only colorize if the paste isn't too long
+                           (literal ,(if (< (string-length (fifth s)) 5000)
                                          (html-colorize 'scheme (fifth s))
                                          (fifth s))))))
              (div (@ (class "paste-footer"))
                   " [ "
                   (a (@ (href ,(make-pathname base-path
-                                              (sprintf "paste?id=~a#a~a" (first s) count))))
+                                              (sprintf "paste?id=~a#a~a"
+                                                       (first s)
+                                                       count))))
                      "permalink")
                   " | "
                   (a (@ (href ,(make-pathname base-path
-                                              (sprintf "raw?id=~a&annotation=~a" (first s) count))))
+                                              (sprintf "raw?id=~a&annotation=~a"
+                                                       (first s)
+                                                       count))))
                      "raw")
                   " ] "))))
 
@@ -496,7 +521,8 @@
                                   (cond ((string-null? paste)
                                          (bail-out "I am not storing empty pastes."))
                                         ((is-it-spam? nick title paste bad-words-irx)
-                                         (when ($ 'notify-irc) (send-to-irc (string-append "SPAM! SPAM! SPAM! by " nick)))
+                                         (when ($ 'notify-irc)
+                                           (send-to-irc (string-append "SPAM! SPAM! SPAM! by " nick)))
                                          `((h2 (@ (align "center")) "Thanks for your paste!")
                                            (p "Hi " ,nick ", thanks for pasting: " (em ,title) (br))))
                                         (else
@@ -620,7 +646,9 @@
                           (input (@ (type "submit")
                                     (value "Search!"))))
                     ,(if (and query (pair? results))
-                         `((h2 (@ (align "center")) "Search results for '" ,query "' " ,(length results) " results")
+                         `((h2 (@ (align "center"))
+                               "Search results for '"
+                               ,query "' " ,(length results) " results")
                            ,(make-search-result-table results))
                          '(p "No results have matched.")))))))
       method: '(get head post))
@@ -660,9 +688,13 @@
                        (alist-ref (car (string-split hash ".")) captchas equal?)) =>
                        (lambda (c)
                          (awful-response-headers '((content-type "audio/wav")))
-                         `(literal ,(string-as-wav espeak-binary
-                                                   (captcha-string c)
-                                                   (preferred-languages (header-contents 'accept-language (request-headers (current-request))))))))
+                         `(literal
+                           ,(string-as-wav espeak-binary
+                                           (captcha-string c)
+                                           (preferred-languages
+                                            (header-contents
+                                             'accept-language
+                                             (request-headers (current-request))))))))
                      (else (bail-out "Wrong captcha hash, please reload the page and try again")))))
             (bail-out "Audio captchas have been disabled in the configuration.")))
       no-template: #t)
