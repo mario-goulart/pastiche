@@ -163,7 +163,7 @@
                      (loop (- n 1)))))))))
 
   (define (figlet str)
-    (call-with-input-pipe (string-append "figlet " str) (lambda (port) (read-string #f port))))
+    (with-input-from-pipe (string-append "figlet " (qs str)) read-string))
 
   (let loop ((n (sub1 num)))
     (if (zero? n)
