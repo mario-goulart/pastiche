@@ -600,7 +600,8 @@
                                            (p "Hi " ,nick ", thanks for pasting: " (em ,title) (br))
                                            (p (@ (align "center"))
                                               "Your paste can be reached with this url: "
-                                              (a (@ (href ,url)) ,url))))))))
+                                              (a (@ (href ,url)) ,url)))))))
+                            (bail-out "Nothing to paste."))
                      (if id
                          (cond ((fetch-paste id)
                                 => (lambda (p)
