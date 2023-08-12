@@ -288,6 +288,7 @@
                         (base-url "http://paste.call-cc.org")
                         (use-captcha? #t)
                         (captcha-api #f)
+                        (anti-spam #f)
                         (audible-captcha? use-captcha?)
                         (espeak-binary "espeak")
                         (espeak-data-dir #f)
@@ -336,10 +337,14 @@
       (error 'pastiche
              "`force-vandusen-notification?' requires both `vandusen-host' and `vandusen-port' to be set."))
 
-    (define bad-words-irx
-      (and bad-words-path
-           (let ((bad-words (call-with-input-file bad-words-path read-lines)))
-             (irregex `(: (w/nocase (or ,@bad-words)))))))
+    (define spam?
+      (or anti-spam
+          (lambda (nick title paste)
+            (is-it-spam? nick title paste
+                         (and bad-words-path
+                              (let ((bad-words
+                                     (call-with-input-file bad-words-path read-lines)))
+                                (irregex `(: (w/nocase (or ,@bad-words))))))))))
 
     ;; The database needs to be initialised once
     (unless (file-exists? db-file)
@@ -574,7 +579,7 @@
                                                  (list nick title time paste))))
                                   (cond ((string-null? paste)
                                          (bail-out "I am not storing empty pastes."))
-                                        ((is-it-spam? nick title paste bad-words-irx)
+                                        ((spam? nick title paste)
                                          (when ($ 'notify-irc)
                                            (send-to-irc (string-append "SPAM! SPAM! SPAM! by " nick)))
                                          `((h2 (@ (align "center")) "Thanks for your paste!")

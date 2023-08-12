@@ -1,4 +1,5 @@
 (include "pastiche.scm")
+(import (chicken string))
 (import pastiche)
 (import awful srfi-1)
 
@@ -15,8 +16,13 @@
         ((consume! define-pages) (void))
         (else (error 'captcha-api "Invalid message" message))))))
 
+(define (is-spam? nick title paste)
+  ;; This is an example on how to use the anti-spam API.
+  (and (substring-index paste "spam") #t))
+
 (pastiche "/" "paste.db"
           captcha-api: (captcha-api)
+          anti-spam: is-spam?
           awful-settings:
           (lambda (handler)
             (parameterize

@@ -27,6 +27,17 @@ install all the required modules first:
  $ chicken-install -n
  $ awful --development-mode example-app.scm
 
+* Anti-spam configuration
+
+The ~pastiche~ procedure provides the ~anti-spam~ keyword parameter.
+By default it is ~#f~.  If bound to a procedure, it will be used to
+check whether pastes are spam.  The procedure is expected to accept
+three arguments: ~nick~, ~title~ and ~paste~.  If the procedure
+returns non-~#f~, the paste is assumed to be spam and pastiche will
+reject and report it accordingly.  If the procedure returns ~#f~, the
+paste is assumed to be legit and will be inserted into the database
+and made available in the pastiche web page.
+
 * License
 
 Copyright © 2011 Christian Kellermann
