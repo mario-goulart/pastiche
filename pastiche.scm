@@ -505,9 +505,9 @@
              (div (@ (class "paste"))
                   (pre (tt (@ (class "highlight scheme-language"))
                             ;; only colorize if the paste isn't too long
-                           ,(if (< (string-length (fifth s)) 5000)
-                                (html-colorize 'scheme (fifth s))
-                                (fifth s)))))
+                           (literal ,(if (< (string-length (fifth s)) 5000)
+                                         (html-colorize 'scheme (fifth s))
+                                         (fifth s))))))
              (div (@ (class "paste-footer"))
                   " [ "
                   (a (@ (href ,(make-pathname base-path
